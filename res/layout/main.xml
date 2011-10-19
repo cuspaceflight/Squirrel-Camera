@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+	android:orientation="vertical" android:layout_width="fill_parent"
+	android:layout_height="fill_parent" android:gravity="center">
+	<TextView android:layout_width="fill_parent"
+		android:layout_height="wrap_content" android:text="Squirrel Camera"
+		android:gravity="center" android:textAppearance="?android:attr/textAppearanceLarge"
+		android:paddingBottom="10dp" />
+	<TextView android:layout_width="fill_parent"
+		android:layout_height="wrap_content" android:text="An app for scheduled photo and video capture"
+		android:gravity="center" android:textAppearance="?android:attr/textAppearanceSmall"
+		android:paddingBottom="20dp" />
+
+	<CheckBox android:text=" Confirm action?" android:id="@+id/CheckBox01"
+		android:layout_width="wrap_content" android:layout_height="wrap_content"></CheckBox>
+	<Button android:text="Start" android:id="@+id/Button01"
+		android:layout_width="150dp" android:layout_height="wrap_content"
+		android:layout_marginTop="10dp"></Button>
+
+	<SurfaceView android:id="@+id/SurfaceView01"
+		android:layout_width="1dip" android:layout_height="1dip"></SurfaceView>
+
+</LinearLayout>
