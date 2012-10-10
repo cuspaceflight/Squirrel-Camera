@@ -1,6 +1,7 @@
 package uk.ac.cam.cusf.squirrelcamera;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.List;
@@ -38,12 +39,21 @@ public class SquirrelCamera extends Activity {
 
     public final static String TAG = "SquirrelCamera";
 
-    private final static String AUTO_START = "uk.ac.cam.cusf.squirrelcamera.AUTO_START";
+    private final static String AUTO_START =
+        "uk.ac.cam.cusf.squirrelcamera.AUTO_START";
+    
+    public final static String DESCENT_BROADCAST = "uk.ac.cam.cusf.intent.action.DESCENT";
+    public final static String CAMERA_START = "uk.ac.cam.cusf.intent.CAMERA_START";
 
-    public final static int LOW_BATTERY = 15; // Enters low power mode at the
-                                              // level
-    public final static int MIN_BATTERY = 10; // Stop recording when battery
-                                              // level is 10%
+    // Enters low power mode when battery level is LOW_BATTERY %
+    public final static int LOW_BATTERY = 15;
+    public final static String LOW_BATTERY_MSG =
+        "Entering low power mode - battery level lower than LOW_BATTERY!";
+    
+    // Stop recording when battery level falls below MIN_BATTERY %
+    public final static int MIN_BATTERY = 10;
+    public final static String MIN_BATTERY_MSG =
+        "Stopping camera - battery level lower than MIN_BATTERY!";
 
     private SurfaceView sv;
     private Scheduler scheduler;
@@ -54,6 +64,9 @@ public class SquirrelCamera extends Activity {
     private LocationManager locationManager;
     private LocationListener locationListener;
     private BroadcastReceiver batteryListener;
+    private BroadcastReceiver descentListener;
+    
+    private BroadcastReceiver scheduleStart;
 
     private PowerManager powerManager;
     private PowerManager.WakeLock wakeLock;
@@ -75,25 +88,14 @@ public class SquirrelCamera extends Activity {
                     public void uncaughtException(Thread thread, Throwable ex) {
                         Log.e(TAG, "UncaughtExceptionHandler", ex);
 
-                        /*
-                         * All uncaught exceptions would result in the Force
-                         * Close dialog being displayed, and the app crashing.
-                         * We can bypass this by simply calling finish()
-                         * ourselves.
-                         */
-
-                        finish();
-
-                        /*
-                         * If we have the REBOOT permission in the manifest, and
-                         * it has been granted (this requires the Android ROM to
-                         * be signed with the same key as this app), then we can
-                         * reboot the device. This is the safest thing to do in
-                         * this situation.
-                         */
-
-                        if (powerManager != null)
-                            powerManager.reboot(null); // Doesn't work!
+                        Log.e(TAG, "Rebooting - see you later...");
+                        
+                        try {
+                            Runtime.getRuntime().exec(new String[]{"/system/bin/su","-c","reboot now"});
+                        } catch (IOException e) {
+                            // We've run out of luck at this point...
+                            finish();
+                        }
 
                     }
                 });
@@ -147,32 +149,57 @@ public class SquirrelCamera extends Activity {
             public void onReceive(Context context, Intent intent) {
                 String action = intent.getAction();
                 if (action.equals(Intent.ACTION_BATTERY_CHANGED)) {
-                    int level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL,
-                            -1);
-                    int scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE,
-                            -1);
+                    int level =
+                        intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+                    int scale =
+                        intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
                     double percent = (100.0 * level) / scale;
                     if (percent < MIN_BATTERY) {
-                        Toast
-                                .makeText(
-                                        getApplicationContext(),
-                                        "Stopping camera - battery level lower than MIN_BATTERY!",
-                                        5000).show();
+                        Toast.makeText(getApplicationContext(), MIN_BATTERY_MSG,
+                                5000).show();
+                        Log.i(TAG, MIN_BATTERY_MSG);
                         stopScheduler();
                     } else if (percent < LOW_BATTERY) {
-                        Toast
-                                .makeText(
-                                        getApplicationContext(),
-                                        "Entering low power mode - battery level lower than LOW_BATTERY!",
-                                        5000).show();
+                        Toast.makeText(getApplicationContext(), LOW_BATTERY_MSG,
+                                5000).show();
+                        Log.i(TAG, LOW_BATTERY_MSG);
                         scheduler.lowPower(true);
                     }
                 }
             }
         };
 
+        descentListener = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (intent.getAction().equals(DESCENT_BROADCAST)) {
+                    Log.i(TAG, "DESCENT_BROADCAST received!");
+                    Bundle extras = intent.getExtras();
+                    if (extras.getBoolean("landed", false)) {
+                        Log.i(TAG, "Squirrel has landed - stopping recording");
+                        stopScheduler();
+                    }
+                }
+            }
+        };
+        
+        scheduleStart = new BroadcastReceiver() {
+
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                boolean start = intent.getBooleanExtra("start", true);
+                if (start) {
+                    startScheduler();
+                } else {
+                    stopScheduler();
+                }
+            }
+            
+        };
+        
         // Set ringer mode to silent so that the shutter sound doesn't play
-        AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+        AudioManager audioManager =
+            (AudioManager) getSystemService(AUDIO_SERVICE);
         audioManager.setRingerMode(AudioManager.RINGER_MODE_SILENT);
 
     }
@@ -183,6 +210,9 @@ public class SquirrelCamera extends Activity {
             IntentFilter actionChanged = new IntentFilter();
             actionChanged.addAction(Intent.ACTION_BATTERY_CHANGED);
             registerReceiver(batteryListener, actionChanged);
+            actionChanged = new IntentFilter();
+            actionChanged.addAction(DESCENT_BROADCAST);
+            registerReceiver(descentListener, actionChanged);
         }
     }
 
@@ -190,6 +220,7 @@ public class SquirrelCamera extends Activity {
         scheduler.stop();
         cameraManager.stopVideo();
         unregisterReceiver(batteryListener);
+        unregisterReceiver(descentListener);
         action.setText("Start");
     }
 
@@ -207,6 +238,12 @@ public class SquirrelCamera extends Activity {
 
         locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER,
                 10000, 0, locationListener);
+        
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(CAMERA_START);
+        registerReceiver(scheduleStart, filter);
+        
+        CameraStatus.setActivity(true);
     }
 
     @Override
@@ -222,6 +259,10 @@ public class SquirrelCamera extends Activity {
 
         if (wakeLock != null && wakeLock.isHeld())
             wakeLock.release();
+        
+        unregisterReceiver(scheduleStart);
+        
+        CameraStatus.setActivity(false);
     }
 
     @Override
@@ -238,30 +279,32 @@ public class SquirrelCamera extends Activity {
 
         private boolean recording = false;
 
-        private MediaRecorder.OnInfoListener infoListener = new MediaRecorder.OnInfoListener() {
-            @Override
-            public void onInfo(MediaRecorder mr, int what, int extra) {
-                Log.i(TAG, "MediaRecorder.onInfoListener (What: " + what
-                        + ", Extra: " + extra + ")");
-                if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED
-                        || what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED) {
-                    if (recording)
-                        stopVideo();
+        private MediaRecorder.OnInfoListener infoListener =
+            new MediaRecorder.OnInfoListener() {
+                @Override
+                public void onInfo(MediaRecorder mr, int what, int extra) {
+                    Log.i(TAG, "MediaRecorder.onInfoListener (What: " + what
+                            + ", Extra: " + extra + ")");
+                    if (what == MediaRecorder
+                            .MEDIA_RECORDER_INFO_MAX_DURATION_REACHED
+                            || what == MediaRecorder
+                            .MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED) {
+                        if (recording) stopVideo();
+                        scheduler.advance();
+                    }
+                }
+            };
+
+        private MediaRecorder.OnErrorListener errorListener =
+            new MediaRecorder.OnErrorListener() {
+                @Override
+                public void onError(MediaRecorder mr, int what, int extra) {
+                    Log.e(TAG, "MediaRecorder.OnErrorListener (What: " + what
+                            + ", Extra: " + extra + ")");
+                    if (recording) stopVideo();
                     scheduler.advance();
                 }
-            }
-        };
-
-        private MediaRecorder.OnErrorListener errorListener = new MediaRecorder.OnErrorListener() {
-            @Override
-            public void onError(MediaRecorder mr, int what, int extra) {
-                Log.e(TAG, "MediaRecorder.OnErrorListener (What: " + what
-                        + ", Extra: " + extra + ")");
-                if (recording)
-                    stopVideo();
-                scheduler.advance();
-            }
-        };
+            };
 
         public void openCamera() {
 
@@ -296,9 +339,7 @@ public class SquirrelCamera extends Activity {
         public void takePhoto() throws Storage.DiskException {
 
             if (!Storage.hasStorage() || Storage.belowMinimumDiskSpace()) {
-                Log
-                        .e(TAG,
-                                "Storage error (either no SD, or below minimum disk space)");
+                Log.e(TAG, "Storage error (no SD, or below min. disk space)");
                 throw new Storage.DiskException();
             }
 
@@ -349,9 +390,7 @@ public class SquirrelCamera extends Activity {
                 RuntimeException, IOException {
 
             if (!Storage.hasStorage() || Storage.belowMinimumDiskSpace()) {
-                Log
-                        .e(TAG,
-                                "Storage error (either no SD, or below minimum disk space)");
+                Log.e(TAG, "Storage error (no SD, or below min. disk space)");
                 throw new Storage.DiskException();
             }
 
@@ -479,6 +518,19 @@ public class SquirrelCamera extends Activity {
                 fos.close();
             } catch (IOException e) {
                 Log.e(TAG, "IOException in SavePhotoTask", e);
+            }
+            
+            // Write to internal phone memory for SSTV access
+            try {
+                filename = "sstv.jpg";
+                SquirrelCamera.this.deleteFile(filename); // Delete existing file
+                FileOutputStream fos = SquirrelCamera.this.openFileOutput(filename, 3);
+                fos.write(jpeg[0]);
+                fos.close();
+            } catch (FileNotFoundException e) {
+                Log.e(TAG, "FileNotFoundException in SavePhotoTask (internal)", e);
+            } catch (IOException e) {
+                Log.e(TAG, "IOException in SavePhotoTask (internal)", e);
             }
 
             return null;

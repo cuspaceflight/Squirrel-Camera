@@ -11,7 +11,7 @@ import android.util.Log;
 public class Scheduler {
 
     public final static String TAG = "SquirrelCamera";
-
+    
     // The length in milliseconds to wait after a DiskException before
     // proceeding
     public final static long PAUSE_DURATION = 120000; // 2 minutes
@@ -30,12 +30,12 @@ public class Scheduler {
     private boolean lowPower = false;
 
     public Scheduler(final CameraRunnable camera) {
-
+        
         taskList = new ArrayList<Task>();
         for (int i = 0; i < 12; i++) {
-            taskList.add(Task.photo(20000));
+            taskList.add(Task.photo(5 * 60000));
         }
-        taskList.add(Task.video(20000, 60000));
+        //taskList.add(Task.video(20000, 60000));
 
         handler = new Handler(new Handler.Callback() {
 
@@ -71,6 +71,7 @@ public class Scheduler {
                         camera.takePhoto();
                         handler.sendMessageDelayed(getNextMessage(), msg.arg1
                                 * (lowPower ? 2 : 1));
+                        
                     } catch (Storage.DiskException e) {
                         pause();
                     }
@@ -117,6 +118,7 @@ public class Scheduler {
         if (RUNNING == false && !taskList.isEmpty()) {
             RUNNING = true;
             handler.sendMessageDelayed(getNextMessage(), 5000);
+            CameraStatus.setRunning(true);
             return true;
         } else {
             return false;
@@ -129,6 +131,7 @@ public class Scheduler {
         handler.removeMessages(PHOTO);
 
         RUNNING = false;
+        CameraStatus.setRunning(false);
     }
 
     private static class Task {

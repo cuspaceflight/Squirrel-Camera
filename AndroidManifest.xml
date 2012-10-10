@@ -16,6 +16,12 @@
 				<category android:name="android.intent.category.DEFAULT" />
 			</intent-filter>
 		</activity>
+		
+		<receiver android:name=".CommandReceiver"> 
+            <intent-filter> 
+                <action android:name="uk.ac.cam.cusf.intent.SMS_RECEIVED" /> 
+            </intent-filter> 
+        </receiver>
 
 	</application>
 	<uses-sdk android:minSdkVersion="8" />

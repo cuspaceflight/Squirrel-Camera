@@ -103,7 +103,7 @@ public class DebugMediaRecorder {
         Future<Void> future = executor.submit(task);
         try {
             ERROR = true;
-            future.get(5, TimeUnit.SECONDS);
+            future.get(10, TimeUnit.SECONDS);
             ERROR = false;
         } catch (ExecutionException e) {
             Log.i(TAG, "ExecutionException", e);
@@ -115,6 +115,13 @@ public class DebugMediaRecorder {
         } catch (TimeoutException e) {
             Log.i(TAG, "TimeoutException", e);
             log("TimeoutException", e);
+            
+            // For Squirrel 3, let's throw a fatal exception here...
+            // It will be caught by the uncaught exception handler, and the
+            // phone will reboot.
+            
+            throw new RuntimeException("TimeoutException for stop()");
+            
         } finally {
             future.cancel(true);
         }
